@@ -1,0 +1,183 @@
+//@version=4
+study("FP413 - QQE + FP413 - Purple Cloud + Auto Fib Extension", overlay=true)
+
+// Entradas de Parâmetros para o Purple Cloud [MMD]
+comprimento_PC = input(10, title="Comprimento do ATR PC")
+mult_PC = input(3.0, title="Multiplicador do ATR PC", step=0.01)
+comprimento_PC2 = input(23, title="Período PC")
+alfa_PC = input(0.9, title="Alfa PC", step=0.1)
+
+// Cálculo do ATR PC
+atr_value_PC = atr(comprimento_PC)
+
+// Cálculo das bandas do Purple Cloud [MMD]
+base_PC = sma(close, comprimento_PC)
+faixa_superior_PC = base_PC + mult_PC * atr_value_PC
+faixa_inferior_PC = base_PC - mult_PC * atr_value_PC
+
+x2_PC = atr(comprimento_PC2) * alfa_PC
+xh_PC = close + x2_PC
+xl_PC = close - x2_PC
+a1_PC = vwma(hl2 * volume, comprimento_PC2 / 4) / vwma(volume, comprimento_PC2 / 4)
+a2_PC = vwma(hl2 * volume, comprimento_PC2 / 2) / vwma(volume, comprimento_PC2 / 2)
+a3_PC = 2 * a1_PC - a2_PC
+a4_PC = vwma(a3_PC, comprimento_PC2)
+
+b1_PC = sma(close, comprimento_PC2)
+
+compra_PC = a4_PC <= xl_PC and close > b1_PC
+venda_PC = a4_PC >= xh_PC and close < b1_PC
+xs_PC = 0
+xs_PC := compra_PC ? 1 : venda_PC ? -1 : xs_PC[1]
+
+var color barColor_PC = na
+if (compra_PC or venda_PC) and xs_PC != xs_PC[1]
+    barColor_PC := compra_PC ? #00bfff : #ff69b4
+else
+    barColor_PC := na
+
+barcolor(barColor_PC)
+
+plotshape(compra_PC and xs_PC != xs_PC[1], title="COMPRA PC", location=location.belowbar, text="C", textcolor=color.white, style=shape.labelup, location=location.belowbar, color=#00bfff, transp=0, size=size.tiny)
+plotshape(venda_PC and xs_PC != xs_PC[1], title="VENDA PC", location=location.abovebar, text="V", textcolor=color.white, style=shape.labeldown, location=location.abovebar, color=#ff69b4, transp=0, size=size.tiny)
+
+alertcondition(compra_PC and xs_PC != xs_PC[1], title="Long PC", message="Long PC")
+alertcondition(venda_PC and xs_PC != xs_PC[1], title="Short PC", message="Short PC")
+
+// Entradas de Parâmetros para o QQE
+RSI_Period = input(4, title='Período do RSI QQE')
+SF = input(2, title='Suavização do RSI QQE')
+QQE = input(4.238, title='Fator QQE Rápido')
+ThreshHold = input(10, title="Limiar QQE")
+
+src = close
+Wilders_Period = RSI_Period * 2 - 1
+
+// Cálculo do RSI QQE
+Rsi = rsi(src, RSI_Period)
+RsiMa = ema(Rsi, SF)
+AtrRsi = abs(RsiMa[1] - RsiMa)
+MaAtrRsi = ema(AtrRsi, Wilders_Period)
+dar = ema(MaAtrRsi, Wilders_Period) * QQE
+
+longband = 0.0
+shortband = 0.0
+trend = 0
+
+DeltaFastAtrRsi = dar
+RSIndex = RsiMa
+newshortband = RSIndex + DeltaFastAtrRsi
+newlongband = RSIndex - DeltaFastAtrRsi
+
+// Atualização das bandas do QQE
+longband := RSIndex[1] > longband[1] and RSIndex > longband[1] ? max(longband[1], newlongband) : newlongband
+shortband := RSIndex[1] < shortband[1] and RSIndex < shortband[1] ? min(shortband[1], newshortband) : newshortband
+
+cross_1 = cross(longband[1], RSIndex)
+trend := cross(RSIndex, shortband[1]) ? 1 : cross_1 ? -1 : nz(trend[1], 1)
+FastAtrRsiTL = trend == 1 ? longband : shortband
+
+// Encontre todas as Cruzadas QQE
+QQExlong = 0
+QQExlong := nz(QQExlong[1])
+QQExshort = 0
+QQExshort := nz(QQExshort[1])
+QQExlong := FastAtrRsiTL < RSIndex ? QQExlong + 1 : 0
+QQExshort := FastAtrRsiTL > RSIndex ? QQExshort + 1 : 0
+
+// Condições do QQE
+qqeLong = QQExlong == 1 ? FastAtrRsiTL[1] - 50 : na
+qqeShort = QQExshort == 1 ? FastAtrRsiTL[1] - 50 : na
+
+// Defina as cores do gráfico com base nas condições do QQE
+barcolor(qqeLong ? #00bfff : qqeShort ? #ff69b4 : na)
+bgcolor(qqeLong ? #00bfff : qqeShort ? #ff69b4 : na, transp=90)
+
+// Plotagem de formas para o QQE
+plotshape(qqeLong, title="QQE longo", text="C", textcolor=color.white, style=shape.labelup, location=location.belowbar, color=#00bfff, transp=0, size=size.tiny)
+plotshape(qqeShort, title="QQE curto", text="V", textcolor=color.white, style=shape.labeldown, location=location.abovebar, color=#ff69b4, transp=0, size=size.tiny)
+
+depthTooltip = "The minimum number of bars that will be taken into account when calculating the indicator."
+depth = input.int(title="Depth", defval=10, minval=2, inline = "Pivots", tooltip=depthTooltip)
+reverse = input(false, "Reverse")
+var extendLeft = input(false, "Extend Left    |    Extend Right", inline = "Extend Lines")
+var extendRight = input(true, "", inline = "Extend Lines")
+var extending = extend.none
+if extendLeft and extendRight
+    extending := extend.both
+else
+    extending := extendLeft ? extend.left : extend.right
+pivots = ta.pivothighlow(high, low, depth, depth)
+tp = ta.pivotlow(high, low, depth, depth)
+bp = ta.pivothigh(high, low, depth, depth)
+np = ta.pivotlow(high, low, depth, depth)
+ip = ta.pivotlow(high, low, depth, depth)
+var line trendLine = na
+line myLine = line.new(na, na, na, na, color = color.red, width = 1, extend = extending, tooltip = "Fibonacci retracement level", title = "Fibonacci Line")
+line.delete(myLine[1])
+
+b1LowLine = na(b1LowLine[1]) ? ta.highestlow(high, low, 500) : b1LowLine[1]
+b1HighLine = na(b1HighLine[1]) ? ta.lowesthigh(high, low, 500) : b1HighLine[1]
+
+// Calculate fib retracement levels
+var float f01 = line.new(na, na, na, na, width=1, color=color.purple, extend=extend.none)
+var float f00 = line.new(na, na, na, na, width=1, color=color.purple, extend=extend.none)
+var float f1 = line.new(na, na, na, na, width=1, color=color.purple, extend=extend.none)
+var float f2 = line.new(na, na, na, na, width=1, color=color.purple, extend=extend.none)
+var float f3 = line.new(na, na, na, na, width=1, color=color.purple, extend=extend.none)
+var float f4 = line.new(na, na, na, na, width=1, color=color.purple, extend=extend.none)
+var float f5 = line.new(na, na, na, na, width=1, color=color.purple, extend=extend.none)
+var float f6 = line.new(na, na, na, na, width=1, color=color.purple, extend=extend.none)
+
+if not na(b1LowLine) and not na(b1HighLine)
+    if not reverse
+        line.set_xy1(f00, b1HighLine, ta.bar_index[ip], b1HighLine)
+        line.set_xy2(f00, ta.bar_index[ip], b1HighLine)
+
+        line.set_xy1(f01, b1LowLine, ta.bar_index[ip], b1LowLine)
+        line.set_xy2(f01, ta.bar_index[ip], b1LowLine)
+
+        line.set_xy1(f1, ta.bar_index[ip], b1LowLine)
+        line.set_xy2(f1, ta.bar_index[np], b1LowLine)
+
+        line.set_xy1(f2, ta.bar_index[np], b1LowLine)
+        line.set_xy2(f2, ta.bar_index[bp], b1HighLine)
+
+        line.set_xy1(f3, ta.bar_index[bp], b1HighLine)
+        line.set_xy2(f3, ta.bar_index[tp], b1HighLine)
+
+        line.set_xy1(f4, ta.bar_index[tp], b1HighLine)
+        line.set_xy2(f4, ta.bar_index[0], b1HighLine)
+
+        line.set_xy1(f5, ta.bar_index[0], b1HighLine)
+        line.set_xy2(f5, ta.bar_index[0] + 10, b1HighLine)
+
+        line.set_xy1(f6, ta.bar_index[0] - 10, b1HighLine)
+        line.set_xy2(f6, ta.bar_index[0], b1HighLine)
+    else
+        line.set_xy1(f00, b1HighLine, ta.bar_index[ip], b1HighLine)
+        line.set_xy2(f00, ta.bar_index[ip], b1HighLine)
+
+        line.set_xy1(f01, b1LowLine, ta.bar_index[ip], b1LowLine)
+        line.set_xy2(f01, ta.bar_index[ip], b1LowLine)
+
+        line.set_xy1(f1, ta.bar_index[ip], b1HighLine)
+        line.set_xy2(f1, ta.bar_index[np], b1HighLine)
+
+        line.set_xy1(f2, ta.bar_index[np], b1HighLine)
+        line.set_xy2(f2, ta.bar_index[bp], b1LowLine)
+
+        line.set_xy1(f3, ta.bar_index[bp], b1LowLine)
+        line.set_xy2(f3, ta.bar_index[tp], b1LowLine)
+
+        line.set_xy1(f4, ta.bar_index[tp], b1LowLine)
+        line.set_xy2(f4, ta.bar_index[0], b1LowLine)
+
+        line.set_xy1(f5, ta.bar_index[0], b1LowLine)
+        line.set_xy2(f5, ta.bar_index[0] + 10, b1LowLine)
+
+        line.set_xy1(f6, ta.bar_index[0] - 10, b1LowLine)
+        line.set_xy2(f6, ta.bar_index[0], b1LowLine)
+
+plotshape(b1LowLine, color=color.red)
+plotshape(b1HighLine, color=color.red)
